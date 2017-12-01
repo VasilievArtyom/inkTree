@@ -6,7 +6,7 @@
 #include "cuda.h"
 #include <omp.h>
 
-#define NUMOFPTCLS 16384 //should correspond to the block size on device
+#define NUMOFPTCLS 8192 //should correspond to the block size on device
 #define BLCSIZE 256 //block size on device
 #define SIMTIME 1000.0f
 #define MODELINGTIME 1000.0f
@@ -90,22 +90,22 @@ void init(float *X, float *Y, float *Z, float *VX, float *VY, float *VZ)
 
 	int xyRadialNum = NUMOFPTCLS / 128;
 	int zRadialNum = NUMOFPTCLS / 256;
-	int rRadialNum = NUMOFPTCLS - xyRadialNum - zRadialNum;
+	int rRadialNum = (NUMOFPTCLS / xyRadialNum ) / zRadialNum;
 
-	float fi, theta, r;
-
+	float fi, theta, r_param;
+	int counter = 0;
 	for (int xy = 0; xy < xyRadialNum; ++xy)
 	{
 		fi = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;
 		for (int z = 0; z < zRadialNum; ++z)
 		{
 			theta = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;
-			for (int r = 0; r < rRadialNum; ++r)
+			for (int r = 0; ((r < rRadialNum) && (++counter < NUMOFPTCLS )); ++r)
 			{
-				r = ((rand() * 1.0) / (RAND_MAX * 1.0)) * R2;
-				X[xy + z + r] = R1 * cos(fi) + r * cos(theta) * cos(fi);
-				Y[xy + z + r] = R1 * sin(fi) + r * cos(theta) * sin(fi);
-				Z[xy + z + r] = r * sin(theta);
+				r_param = ((rand() * 1.0) / (RAND_MAX * 1.0)) * R2;
+				X[counter - 1] = R1 * cos(fi) + r_param * cos(theta) * cos(fi);
+				Y[counter - 1] = R1 * sin(fi) + r_param * cos(theta) * sin(fi);
+				Z[counter - 1] = r_param * sin(theta);
 			}
 		}
 	}
@@ -124,6 +124,10 @@ void observe(float *X, float *Y, float *Z)
 
 int main()
 {
+	std::cout << "jlkjlkj" << std::endl;
+
+	std::freopen("out.txt", "w", stdout);
+
 	float KX[4][NUMOFPTCLS]; //x from K[index of ode][index of koeff for this ode] Set of RK4 coeff-ts 
 	float KY[4][NUMOFPTCLS]; //y from K[index of ode][index of koeff for this ode] Set of RK4 coeff-ts 
 	float KZ[4][NUMOFPTCLS]; //z from K[index of ode][index of koeff for this ode] Set of RK4 coeff-ts 
@@ -134,13 +138,15 @@ int main()
 
 	//init conditions for host
 	init(X[0], Y[0], Z[0], VX, VY, VZ);
+	observe(X[0], Y[0], Z[0]);
+
 
 	//alloc arrays on device
 	float * devX, *devY, *devZ, *devVX, *devVY, *devVZ;
 	unsigned int array_size = sizeof(float) * NUMOFPTCLS;
 	cudaMalloc((void**)&devX, array_size); cudaMalloc((void**)&devY, array_size); cudaMalloc((void**)&devZ, array_size);
 	cudaMalloc((void**)&devVX, array_size); cudaMalloc((void**)&devVY, array_size); cudaMalloc((void**)&devVZ, array_size);
-
+	observe(X[0], Y[0], Z[0]);
 
 	//[::RK4
 	for (double t = 0.0f; t < MODELINGTIME; t += STEP)
@@ -193,7 +199,7 @@ int main()
 			Z[0][i] += 1.0f / 6.0f*(KZ[0][i] + 2 * KZ[1][i] + 2 * KZ[2][i] + KZ[3][i]) * STEP;
 		}
 
-		if ((int(t * 1000) % 100) == 0) observe(X[0], Y[0], Z[0]);
+		if ((int(t * 1000) % 1) == 0) observe(X[0], Y[0], Z[0]);
 	}
 	//::]RK4
 	return 0;
