@@ -10,9 +10,9 @@
 #define BLCSIZE 256 //block size on device
 #define SIMTIME 1000.0f
 #define MODELINGTIME 1000.0f
-#define STEP 0.01f
-#define MODEL_PARAM 0.04f // MODEL_PARAM = a_0/R * 0.75
-#define MINDIST 0.0001f // minimal dist 
+#define STEP 0.05f
+#define MODEL_PARAM 0.004f // MODEL_PARAM = a_0/R * 0.75
+#define MINDIST 0.00001f // minimal dist 
 
 
 __global__ void onCernelCalc(float *X, float *Y, float *Z,
@@ -48,6 +48,20 @@ __global__ void onCernelCalc(float *X, float *Y, float *Z,
 		}
 		__syncthreads();
 	}
+	/*
+	for (int j = 0; j < NUMOFPTCLS; ++j)
+	{
+		if ((j) != id)
+		{
+			hx = Xi - X[j];
+			hy = Yi - Y[j];
+			hz = Zi - Z[j];
+			r = sqrtf(hx*hx + hy*hy + hz*hz) + MINDIST;
+			ux_i += -hx * (hz / (r*r*r));
+			uy_i += -hy * (hz / (r*r*r));
+			uz_i += -1.0f / (r*r) - hz * (hz / (r*r*r));
+		}
+	}*/
 
 	UX[id] = MODEL_PARAM * ux_i;
 	UY[id] = MODEL_PARAM * uy_i;
@@ -71,9 +85,9 @@ void viCalc(float *X, float *Y, float *Z, float *VX, float *VY, float *VZ,
 
 	onCernelCalc <<<numOfBlocks, numOfThreads>>> (devX, devY, devZ, devVX, devVY, devVZ, numOfBlocks);
 
-	cudaMemcpy(devVX, VX, array_size, cudaMemcpyDeviceToHost);
-	cudaMemcpy(devVY, VY, array_size, cudaMemcpyDeviceToHost);
-	cudaMemcpy(devVZ, VZ, array_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(VX, devVX, array_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(VY, devVY, array_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(VZ, devVZ, array_size, cudaMemcpyDeviceToHost);
 }
 
 void init(float *X, float *Y, float *Z, float *VX, float *VY, float *VZ)
@@ -85,7 +99,7 @@ void init(float *X, float *Y, float *Z, float *VX, float *VY, float *VZ)
 		VZ[i] = 0;
 	}
 
-	float const R1 = 10.0f;
+	float const R1 = 4.0f;
 	float const R2 = 2.0f;
 
 	int xyRadialNum = NUMOFPTCLS / 128;
@@ -96,16 +110,19 @@ void init(float *X, float *Y, float *Z, float *VX, float *VY, float *VZ)
 	int counter = 0;
 	for (int xy = 0; xy < xyRadialNum; ++xy)
 	{
-		fi = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;
+		
 		for (int z = 0; z < zRadialNum; ++z)
 		{
-			theta = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;
-			for (int r = 0; ((r < rRadialNum) && (++counter < NUMOFPTCLS )); ++r)
+			
+			for (int r = 0; ((r < rRadialNum) && (counter < NUMOFPTCLS )); ++r, ++counter)
 			{
+				fi = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;
+				theta = ((rand() * 1.0) / (RAND_MAX * 1.0)) * 2 * 3.1415926535;				
 				r_param = ((rand() * 1.0) / (RAND_MAX * 1.0)) * R2;
-				X[counter - 1] = R1 * cos(fi) + r_param * cos(theta) * cos(fi);
-				Y[counter - 1] = R1 * sin(fi) + r_param * cos(theta) * sin(fi);
-				Z[counter - 1] = r_param * sin(theta);
+
+				X[counter] = R1 * cos(fi) + r_param * cos(theta) * cos(fi);
+				Y[counter] = R1 * sin(fi) + r_param * cos(theta) * sin(fi);
+				Z[counter] = r_param * sin(theta);
 			}
 		}
 	}
@@ -124,8 +141,6 @@ void observe(float *X, float *Y, float *Z)
 
 int main()
 {
-	std::cout << "jlkjlkj" << std::endl;
-
 	std::freopen("out.txt", "w", stdout);
 
 	float KX[4][NUMOFPTCLS]; //x from K[index of ode][index of koeff for this ode] Set of RK4 coeff-ts 
@@ -199,7 +214,8 @@ int main()
 			Z[0][i] += 1.0f / 6.0f*(KZ[0][i] + 2 * KZ[1][i] + 2 * KZ[2][i] + KZ[3][i]) * STEP;
 		}
 
-		if ((int(t * 1000) % 1) == 0) observe(X[0], Y[0], Z[0]);
+		if ((int(t * 1000) % 100) == 0) observe(X[0], Y[0], Z[0]);
+		std::cerr << t << " of " << MODELINGTIME << std::endl;
 	}
 	//::]RK4
 	return 0;
